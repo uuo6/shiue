@@ -5,7 +5,7 @@ date: 2026-11-07T12:00:00+08:00
 description: 新站第一篇，先占个位置。
 draft: false
 tags:
-- 随笔
+- essay
 ---
 
 这里是「欧小新の站」。
