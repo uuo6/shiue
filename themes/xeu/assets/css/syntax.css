@@ -1,0 +1,10 @@
+.code-block .shiki { background: transparent !important; }
+.shiki span { --shiki-dark-bg: transparent; }
+:root[data-color-mode="dark"] .shiki,
+:root[data-color-mode="dark"] .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style, normal) !important;
+  font-weight: var(--shiki-dark-font-weight, normal) !important;
+  text-decoration: var(--shiki-dark-text-decoration, none) !important;
+}
+:root[data-color-mode="dark"] .shiki span { background-color: var(--shiki-dark-bg, transparent) !important; }

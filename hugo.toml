@@ -1,0 +1,8 @@
+baseURL = 'https://shiue.uuo6.workers.dev/'
+locale = 'zh-CN'
+theme = 'xeu'
+title = "欧小新の站"
+[params]
+description = "圈一块地，画一间牢。"
+[params.author]
+name = "欧小新"

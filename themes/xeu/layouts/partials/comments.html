@@ -1,0 +1,85 @@
+{{ if and .Site.Params.comments.enabled (ne .Params.comments false) (eq .Section "post") }}
+{{ $comments := partial "comment-data.html" . }}
+{{ $byId := dict }}
+{{ range $comments }}{{ $byId = merge $byId (dict .id .) }}{{ end }}
+{{ $children := dict }}
+{{ range $comments }}
+  {{ $parentId := .parentId | default "" }}
+  {{ if not (index $byId $parentId) }}{{ $parentId = "" }}{{ end }}
+  {{ $siblings := index $children $parentId | default slice }}
+  {{ $children = merge $children (dict $parentId ($siblings | append .)) }}
+  {{/* 手工编辑的数据也不能产生循环，避免递归渲染失控或整串留言消失。 */}}
+  {{ $seen := slice .id }}
+  {{ $ancestor := .parentId | default "" }}
+  {{ range $comments }}
+    {{ if not (index $byId $ancestor) }}{{ break }}{{ end }}
+    {{ if in $seen $ancestor }}{{ errorf "Comment reply cycle in %s" $.File.Path }}{{ break }}{{ end }}
+    {{ $seen = $seen | append $ancestor }}
+    {{ $ancestor = (index $byId $ancestor).parentId | default "" }}
+  {{ end }}
+{{ end }}
+<section class="comments surface" aria-labelledby="comments-title" data-comments>
+  <div class="comment-heading">
+    <h2 id="comments-title">评论</h2>
+    <div class="comment-heading-actions"><span>{{ len $comments }} 条留言</span><button class="page-link" type="button" data-new-comment aria-haspopup="dialog" aria-controls="comment-editor" aria-expanded="false" hidden>评论</button></div>
+  </div>
+  <p class="comment-status" data-comment-load-status role="status" aria-live="polite"></p>
+  {{ partialCached "lazy-feature.html" (dict "name" "comments" "script" "comments" "style" "comment-editor") "comments" }}
+  {{ if $comments }}
+  <ol class="comment-list">
+    {{ range index $children "" }}{{ partial "comment-thread.html" (dict "comment" . "byId" $byId "children" $children "depth" 0) }}{{ end }}
+  </ol>
+  {{ else }}<p class="comment-empty">还没有留言，欢迎分享你的想法。</p>{{ end }}
+  <div class="comment-popover" id="comment-editor" popover="auto" role="dialog" aria-labelledby="comment-editor-title" hidden>
+  <div class="comment-editor-heading">
+    <div class="comment-label-row">
+      <h3 id="comment-editor-title">写下你的留言</h3>
+      <button class="comment-help" type="button" data-comment-help="comment-draft-note" aria-label="草稿保存说明" aria-describedby="comment-draft-note">{{ partial "icons/question.html" . }}</button>
+    </div>
+    <button class="comment-editor-close" type="button" data-close-comment aria-label="关闭留言编辑器"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+  </div>
+  <form class="comment-form" data-comment-form data-path="{{ .RelPermalink }}" data-endpoint="/api/submissions">
+    <fieldset disabled>
+      <legend class="sr-only">留言内容</legend>
+      <input type="hidden" name="parentId" value="">
+      <div class="comment-reply-context" data-reply-context hidden>
+        <p>正在回复 <a data-reply-target></a></p>
+      </div>
+      <div class="comment-identity-row"><div>
+      <label for="comment-name">昵称</label>
+      <input id="comment-name" name="name" autocomplete="nickname" maxlength="40" required placeholder="怎么称呼你">
+      </div><div>
+      <div class="comment-label-row">
+        <label for="comment-email">邮箱（选填）</label>
+        <button class="comment-help" type="button" data-comment-help="comment-email-note" aria-label="邮箱通知说明" aria-describedby="comment-email-note">{{ partial "icons/question.html" . }}</button>
+      </div>
+      <input id="comment-email" name="email" type="email" autocomplete="email" maxlength="254" aria-describedby="comment-email-note" placeholder="用于接收留言通知">
+      </div></div>
+      <div class="comment-label-row">
+        <label for="comment-message">评论</label>
+        <button class="comment-help" type="button" data-comment-help="comment-note" aria-label="留言提交说明" aria-describedby="comment-note">{{ partial "icons/question.html" . }}</button>
+      </div>
+      <textarea id="comment-message" name="message" rows="5" maxlength="2000" required aria-describedby="comment-note" placeholder="关于这篇文章，你想说些什么？"></textarea>
+      <div class="comment-honeypot" aria-hidden="true"><label for="comment-website">请留空</label><input id="comment-website" name="website" tabindex="-1" autocomplete="off"></div>
+      <label class="comment-consent"><input type="checkbox" name="consent" required>我同意昵称和留言经审核后公开，并保留在公开 Git 仓库的历史记录中。</label>
+      <button class="page-link" type="submit">提交留言</button>
+    </fieldset>
+    <div class="comment-feedback" data-comment-feedback tabindex="-1">
+      <div class="comment-state-symbol" data-state-symbol aria-hidden="true" hidden>
+        <svg class="comment-state-spinner" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="24" cy="24" r="19" opacity=".15"/><path d="M24 5a19 19 0 0 1 19 19" stroke-linecap="round"/></svg>
+        <svg class="comment-state-success" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="24" cy="24" r="19" opacity=".25"/><path d="m15 24 6 6 12-12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h3 id="comment-state-title" data-state-title hidden></h3>
+      <p class="comment-status" role="status" aria-live="polite"></p>
+      <div class="submission-verification" data-turnstile hidden></div>
+      <button class="text-button" type="button" data-cancel-verification hidden>取消验证</button>
+      <button class="page-link" type="button" data-comment-done hidden>完成</button>
+    </div>
+  </form>
+  <p class="comment-tooltip" id="comment-email-note" role="tooltip" hidden>填写即同意接收本条留言的审核通过和回复通知。邮箱仅用于通知，以加密形式保存，不会公开展示。</p>
+  <p class="comment-tooltip" id="comment-note" role="tooltip" hidden>提交时使用 Cloudflare Turnstile 验证以减少垃圾评论。留言通过邮件送交审核，通过后随网站更新显示。支持纯文本，请勿填写隐私信息。</p>
+  <p class="comment-tooltip" id="comment-draft-note" data-draft-note role="tooltip" hidden>草稿（含昵称和邮箱）仅保存在此浏览器，提交成功后清除。</p>
+  </div>
+  <noscript><p>查看留言不需要 JavaScript；启用 JavaScript 后可以提交留言。</p></noscript>
+</section>
+{{ end }}

@@ -1,0 +1,15 @@
+{{- $pages := slice -}}
+{{- if .Site.Params.comments.enabled -}}
+  {{- range where .Site.RegularPages "Section" "post" -}}
+    {{- if ne .Params.comments false -}}
+      {{- $ids := slice -}}
+      {{- $contacts := dict -}}
+      {{- range partial "comment-data.html" . -}}
+        {{- $ids = $ids | append .id -}}
+        {{- if .emailEncrypted -}}{{- $contacts = merge $contacts (dict .id (dict "emailEncrypted" .emailEncrypted "emailHash" .emailHash)) -}}{{- end -}}
+      {{- end -}}
+      {{- $pages = $pages | append (dict "path" .RelPermalink "title" .Title "directory" (strings.TrimSuffix "/" .File.Dir) "commentIds" $ids "notificationEmails" $contacts) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $pages | jsonify -}}

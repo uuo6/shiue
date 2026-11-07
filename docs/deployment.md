@@ -1,0 +1,161 @@
+# 部署流程
+
+`npm run deploy`、`npm run build` 和各平台的 Build Command 统一进入 `scripts/deploy.mjs`（旧入口 `bash scripts/hugo.sh --minify` 亦同）。此流程只负责生成与检查产物，上传和发布由托管平台执行，本地运行不会触发线上发布。平台配置见 [Serverless 部署](serverless.md)。
+
+```text
+环境检查 → Hugo 工具准备
+        ↓
+   GitHub 站点图标
+        ↓
+  友链检测 → 图片预处理
+        ↓
+D2 SVG 预渲染与压缩
+        ↓
+Shiki 代码高亮预渲染
+        ↓
+Hugo 构建 → CSS 裁剪与压缩 → 产物检查 → 耗时汇总 + JSON 报告
+```
+
+## 模块边界
+
+| 模块 | 职责 |
+| --- | --- |
+| `scripts/deploy.mjs` | 参数解析、互斥锁、取消信号、唯一 CLI 入口 |
+| `scripts/deploy/steps.mjs` | 声明有序步骤及业务逻辑 |
+| `scripts/deploy/pipeline.mjs` | 步骤生命周期、错误边界、计时及报告 |
+| `scripts/deploy/reporter.mjs` | 终端展示、进度与耗时汇总 |
+| `scripts/deploy/process.mjs` | 子进程输出流、退出码和取消处理 |
+| `scripts/friends/health.mjs` | 有限并发的友链健康检测、重试和快照 |
+| `scripts/assets/identity.mjs` | 联网拉取 GitHub 头像、生成站点图标 |
+| `scripts/assets/d2.mjs` | D2 图表预渲染与压缩 |
+| `scripts/assets/shiki.mjs` | Shiki 双主题代码高亮预渲染与缓存 |
+| `scripts/assets/math.mjs` | 公式预渲染为 SVG、id 重写与缓存 |
+| `scripts/assets/styles.mjs` | 根据页面及脚本裁剪 CSS、清理变量与动画、重写指纹及 SRI |
+| `scripts/assets/images.mjs` | 图片缩略图与 BlurHash 生成 |
+| `scripts/deploy/files.mjs` | JSON 原子写入 |
+| `scripts/hugo.sh` | Hugo 版本解析、校验和、工具缓存 |
+| `scripts/friends/add.mjs` | 添加友链：抓取站点信息与图标 |
+| `scripts/friends/publish.mjs` | 友链审批发布（GitHub Action） |
+| `scripts/comments/publish.mjs` | 评论验签与写入（GitHub Action） |
+| `scripts/comments/push.mjs` | 评论安全推送（GitHub Action） |
+| `scripts/posts/new.mjs` | 新建文章脚手架 |
+
+步骤按注册顺序执行。新增预处理只需在 `deploymentSteps()` 中注册一步：
+
+```js
+{
+  id: 'custom-preprocess',
+  title: '新的预处理',
+  skip: context => context.offline ? '离线模式' : false,
+  async run(context, { log, warn, signal }) {
+    log('进度信息');
+    signal?.throwIfAborted();
+    return { processed: 10 }; // 写入报告
+  },
+}
+```
+
+每步自动记录开始时间、耗时、状态与警告；失败会停止后续步骤。报告位于 `.cache/deploy/report.json`，不提交到 Git。
+
+## 命令
+
+```bash
+npm ci
+npm run deploy                                # 完整构建（与 build 相同）
+npm run build -- --offline                   # 离线，需已有 Hugo 与图标产物
+npm run identity                             # 重新生成站点图标
+npm run d2                                   # 预渲染 D2 SVG
+npm run d2:watch                             # 监听 D2 代码块变化
+npm run shiki                                # 预渲染 Shiki 代码高亮
+npm run shiki:watch                          # 单独监听代码块变化
+npm run math                                 # 预渲染公式 SVG
+npm run math:watch                           # 单独监听公式变化
+npm run dev                                  # 开发服务器
+npm run deploy -- --list                     # 列出注册步骤
+npm run deploy -- --destination /tmp/out --baseURL https://example.com/blog/
+```
+
+`HUGO_BIN` 可指定 Hugo 二进制；Linux x86_64 未安装时自动下载官方 Extended 发行包并验证 SHA-256，缓存在 `.cache/deploy/hugo/`。
+
+同一工作区不能同时运行两个部署流程。进程被 SIGKILL 或断电后，需确认无运行中构建再删除 `.cache/deploy/run.lock`。
+
+## CSS 与浏览器脚本
+
+Hugo 构建后，`scripts/assets/styles.mjs` 根据 HTML 和页面引用的脚本（包括延迟加载模块）使用 PurgeCSS 裁剪样式，再用 Lightning CSS 合并、压缩。使用相同脚本和功能的页面共享 CSS，避免为每篇文章生成独立文件。动态外观、导航、目录、评论状态与 View Transition 样式保留；JavaScript 读取的变量以及延迟样式依赖的变量保留。
+
+CSS 内容变化后重新生成 SHA-256 文件名和 `integrity`，同步替换普通样式链接和延迟加载地址，支持 `--baseURL` 子目录。构建前清理主题生成的旧 CSS / JS 指纹文件，避免恢复旧 `public/` 时持续累积。
+
+文章入口保留图片占位、代码复制、目录和评论时间；首次点击评论或正文图片时才加载对应模块及样式，加载失败可再次点击重试。评论审核单独打包；卡片动效只随列表和搜索脚本加载。开发服务器使用完整样式，页面交互与生产构建一致。
+
+`npm run test:styles` 检查裁剪、动态状态、共享样式、延迟依赖、子目录地址及 SRI；`npm run test:shiki` 检查静态高亮；`npm run test:math` 检查公式提取、id 重写与缓存。
+
+## 图片构建缓存
+
+图片缓存只使用 `$PWD/.cache/xeu-images/`：`images.json` 保存清单，`files/` 保存派生 WebP。Cloudflare Workers Builds 需在 **Settings → Build → Build cache** 启用。
+
+每份唯一内容只解码一次，并行生成 640px 小图与 1600px 中图；原图不改写、不进缓存。命中缓存时直接恢复，不重新压缩；缓存缺失、损坏或配方变更时重新生成。并发默认最多 6 组，可用 `SHIUE_IMAGE_CONCURRENCY` 调整。
+
+构建日志显示「缓存复用 N 张，K 张新生成」；首次构建全量生成，命中缓存后应为 `0 张新生成`。
+
+## D2 构建缓存
+
+`scripts/assets/d2.mjs` 扫描 `content/` 中的 D2 代码块，按内容指纹缓存于 `.cache/xeu-d2/`。源码未变时不重新渲染，直接重建清单；语法错误终止构建。缓存与清单缺失时 `npm run build` 自动补齐；绕过统一入口直接执行 Hugo 前，必须先运行 `npm run d2`。
+
+## Shiki 代码高亮
+
+`scripts/assets/shiki.mjs` 用 CommonMark 解析器扫描 `content/` 中的围栏代码块，按语言与源码生成 Shiki HTML，写入 `data/xeu/shiki.json`。主题为 `github-light` / `github-dark`，颜色随站点外观切换；代码文本与复制按钮保留，RSS 使用内联的浅色颜色。
+
+代码块缓存于 `.cache/xeu-shiki/code.json`，语言、源码、高亮库版本或主题变化时重新生成。未标注及未知语言回退为纯文本，支持大小写语言名及现有的 `shell` / `clike` 标记。高亮只在构建时执行，不向浏览器发送 Shiki 或语言语法文件。
+
+`npm run build` 自动准备高亮产物；`npm run dev` 同时监听代码块变化并更新高亮，退出后自动停止监听。绕过统一入口直接运行 Hugo 构建前，需先执行 `npm run shiki`。
+
+## 公式
+
+正文里的 `$$…$$` 是展示公式，`\(…\)` 是行内公式，由 `config/_default/markup.toml` 的 passthrough 扩展交给 `render-passthrough.html`。行内不用 `$…$`，避免把 `$12`、`$HOME` 这类文本当成数学；块级也不用 `\[…\]`，避免与老文章里 `\[1\]` 这类脚注标记冲突。
+
+`scripts/assets/math.mjs` 用 [texsvg](https://github.com/remarkablemark/texsvg)（MathJax + SVGO）把公式渲染成自包含 SVG，写入 `data/xeu/math.json`，模板按「类型 + 源码」的 SHA-256 取值内联。SVG 用 `currentColor` 着色，跟随浅色/深色外观，页面不加载任何数学字体或运行时脚本。
+
+MathJax 的 id 形如 `MJX-1-NCM-I-1D465`，序号随渲染顺序变化；同一公式在页面上也可能出现多次。构建时先把 id 重写成「公式指纹 + 元素序号」，渲染时再按页内出现顺序追加实例序号，避免内联多个公式时 id 互相覆盖、`<use>` 引用错位。
+
+缓存位于 `.cache/xeu-math/`，配方或源码变化时重新生成。MathJax 语法错误不会抛异常而是输出占位 SVG，脚本会检测 `data-mjx-error` 并终止构建并给出出错公式。
+
+## 友链检测
+
+每次非离线部署重新检测 `data/friends.json` 中的站点：GET 请求、最多 5 次跳转、收到响应头即取消正文、单次最多 8 秒，失败重试一次。2xx 为正常；403/401 显示"访问受限"，429 显示"请求受限"，另区分证书、DNS、超时问题。
+
+结果写入被 Git 忽略的 `data/xeu/friend-health.json`，模板据此分组显示，恢复后自动移回。站点异常只产生警告，不阻断部署。
+
+检测结果反映构建时的访问情况，不是持续监控。开发服务器与 GitHub Actions 构建不访问友链。
+
+## GitHub 头像与站点图标
+
+唯一来源为 `https://avatars.githubusercontent.com/u/36541432`。每次部署重新下载（GitHub 可能返回 Octocat 占位图，下载器按 SHA-256 识别并重试），生成：
+
+| 用途 | 产物 |
+| --- | --- |
+| favicon | 16 / 32 / 48px 圆角透明 WebP + 兼容 ICO |
+| Apple Touch Icon | 180px PNG |
+| 应用图标 | 192px WebP |
+| 分享图 | 512px PNG（无封面页面的默认值） |
+| 页面头像 | 48–512px 响应式 WebP |
+
+产物写入 `static/site-identity/<指纹>/`，兼容地址 `/favicon.ico`、`/avatar.jpg` 一并生成，全部被 Git 忽略。内容指纹地址保证头像更新后浏览器不会命中旧图。
+
+下载或处理失败会终止部署，不会悄悄使用旧头像。仅 `--offline` 允许复用本机已有产物，缺失时报错，需先联网执行 `npm run identity`。
+
+## 每日刷新
+
+`.github/workflows/daily-deploy.yml` 每天 UTC 03:17（北京时间 11:17）向默认分支推送一条空提交，由托管平台 Git 集成触发构建，刷新头像与友链状态。工作流本身不构建站点。
+
+- 手动运行：Actions 页面选择「每日刷新部署」，仅限默认分支。
+- 推送使用 `GITHUB_TOKEN`（`contents: write`），无需新增 Secret。
+- 与普通提交冲突时自动 rebase 并重试，最多 5 次，不强制推送。
+- 配置了 Ignored Build Step 的平台需允许空提交触发构建。
+
+调度可能延迟；公开仓库长期无活动时 Actions 可能被停用，见 [GitHub schedule 文档](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-a-workflows#schedule)。
+
+## 评论审批发布
+
+评论和友链共用 `/api/submissions` Serverless Function。流程：绑定内容的 Turnstile 验证 → 邮件审批 → `publish-comment.yml` 验签并提交评论文件 → Git 集成自动构建。评论 CI 不安装依赖、不构建站点、不调用 Deploy Hook。
+
+函数平台与 GitHub 配置同一个 `COMMENTS_SECRET`，程序自动派生各用途密钥。完整配置见 [评论系统](comments.md)。

@@ -1,0 +1,19 @@
+baseURL = "https://shiue.uuo6.workers.dev/"
+locale = "zh-CN"
+title = "欧小新の站"
+defaultContentLanguage = "zh-cn"
+hasCJKLanguage = true
+summaryLength = 100
+enableRobotsTXT = true
+
+[outputs]
+home = ["HTML", "RSS", "CommentPages"]
+
+[outputFormats.CommentPages]
+mediaType = "application/json"
+baseName = "comment-pages"
+isPlainText = true
+notAlternative = true
+
+[pagination]
+pagerSize = 12

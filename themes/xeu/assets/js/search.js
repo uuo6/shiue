@@ -1,0 +1,117 @@
+import { initializeImages, releaseImages } from './images.js';
+
+(() => {
+  const search = document.querySelector('[data-search]');
+  if (!search) return;
+  const form = search.querySelector('form');
+  const input = search.querySelector('input');
+  const status = search.querySelector('[role="status"]');
+  const results = search.querySelector('[data-search-results]');
+  const replaceResults = (cards = []) => {
+    releaseImages(results);
+    results.replaceChildren(...cards);
+    initializeImages(results);
+  };
+  let indexPromise;
+  let revision = 0;
+  let timer;
+  const normalize = text => String(text).normalize('NFKC').toLocaleLowerCase();
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const renderCard = item => {
+    const card = element('article', 'post-card');
+    if (item.image) {
+      const cover = element('a', 'card-cover');
+      cover.href = item.permalink;
+      cover.tabIndex = -1;
+      cover.setAttribute('aria-hidden', 'true');
+      cover.dataset.progressiveImage = '';
+      if (item.imageData?.blurhash) cover.dataset.blurhash = item.imageData.blurhash;
+      if (item.imageData?.height) cover.dataset.ratio = item.imageData.width / item.imageData.height;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      if (item.imageData?.srcset) {
+        img.sizes = item.imageData.sizes;
+        img.srcset = item.imageData.srcset;
+      }
+      if (item.imageData?.width) img.width = item.imageData.width;
+      if (item.imageData?.height) img.height = item.imageData.height;
+      img.src = item.image;
+      cover.append(img);
+      card.append(cover);
+    }
+    card.append(element('div', 'card-taxonomy', item.tags.slice(0, 2).map(tag => `# ${tag}`).join('  ')));
+    const title = element('h2', 'card-title');
+    const link = element('a', '', item.title);
+    link.href = item.permalink;
+    title.append(link);
+    card.append(title, element('p', 'card-summary', item.description));
+    const meta = element('div', 'card-meta');
+    const date = element('time', '', item.date);
+    date.dateTime = item.date;
+    meta.append(date, element('span', '', `${item.readingTime} 分钟阅读`));
+    card.append(meta);
+    return card;
+  };
+  const run = async () => {
+    const current = ++revision;
+    const query = input.value.trim();
+    const url = new URL(location.href);
+    if (query) url.searchParams.set('keyword', query);
+    else url.searchParams.delete('keyword');
+    history.replaceState(null, '', url);
+    if (!query) {
+      replaceResults();
+      results.removeAttribute('aria-busy');
+      status.textContent = '';
+      return;
+    }
+    status.textContent = '正在搜索…';
+    results.setAttribute('aria-busy', 'true');
+    try {
+      indexPromise ??= fetch(search.dataset.index).then(response => {
+        if (!response.ok) throw new Error('搜索索引加载失败');
+        return response.json();
+      }).then(items => items.map(item => ({
+        item,
+        title: normalize(item.title),
+        tags: normalize(item.tags.join(' ')),
+        content: normalize(item.content),
+      })))
+      .catch(error => { indexPromise = undefined; throw error; });
+      const index = await indexPromise;
+      if (current !== revision) return;
+      const words = normalize(query).split(/\s+/);
+      const matches = index.map(({ item, title, tags, content }) => {
+        const haystack = `${title} ${tags} ${content}`;
+        return { item, score: words.every(word => haystack.includes(word))
+          ? 1 + words.reduce((score, word) => score + (title.includes(word) ? 10 : 0) + (tags.includes(word) ? 5 : 0), 0) : 0 };
+      }).filter(result => result.score > 0).sort((a, b) => b.score - a.score);
+      replaceResults(matches.map(({ item }) => renderCard(item)));
+      status.textContent = matches.length ? `找到 ${matches.length} 篇文章` : `没有找到与「${query}」相关的文章`;
+    } catch {
+      if (current === revision) {
+        replaceResults();
+        status.textContent = '搜索暂时不可用，请重新搜索以重试。';
+      }
+    } finally {
+      if (current === revision) results.removeAttribute('aria-busy');
+    }
+  };
+  form.addEventListener('submit', event => { event.preventDefault(); clearTimeout(timer); run(); });
+  input.addEventListener('input', event => {
+    if (event.isComposing) return;
+    clearTimeout(timer);
+    ++revision;
+    timer = setTimeout(run, 180);
+  });
+  input.addEventListener('compositionend', () => { clearTimeout(timer); run(); });
+  input.value = new URLSearchParams(location.search).get('keyword') || '';
+  if (input.value) run();
+})();

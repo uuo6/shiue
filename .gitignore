@@ -1,0 +1,31 @@
+public
+resources
+assets/jsconfig.json
+.hugo_build.lock
+node_modules/
+.env
+.env.*
+!.env.example
+.vercel/
+.netlify/
+.wrangler/
+.dev.vars
+.dev.vars.*
+data/friends.json.lock
+data/friends.json.*.tmp
+.cache/deploy/
+.cache/xeu-images/
+.cache/xeu-d2/
+.cache/xeu-shiki/
+.cache/xeu-math/
+
+# Generated image manifests, site identity and friend-health snapshots.
+/data/xeu/
+
+# Generated image assets; keep static/friends/ tracked.
+/static/xeu-images/
+/static/site-identity/
+/static/favicon.ico
+/static/favicon.ico.*.tmp
+/static/avatar.jpg
+/static/avatar.jpg.*.tmp

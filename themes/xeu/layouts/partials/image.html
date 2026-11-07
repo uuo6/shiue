@@ -1,0 +1,50 @@
+{{- $src := .src -}}
+{{- $path := (urls.Parse $src).Path -}}
+{{- $result := dict "src" $src -}}
+{{- if not (findRE `^(https?:)?//` $src) -}}
+  {{- $result = dict "src" (strings.TrimPrefix "/" $src | relURL) -}}
+  {{- $resource := .page.Resources.GetMatch (strings.TrimPrefix "/" $src) -}}
+  {{- if not $resource }}{{ $resource = .page.Site.Home.Resources.GetMatch (strings.TrimPrefix "/" $src) }}{{ end -}}
+  {{- with $resource -}}
+    {{- $result = dict "src" .RelPermalink -}}
+    {{- if reflect.IsImageResourceProcessable . -}}
+      {{- $result = merge $result (dict "width" .Width "height" .Height) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $result = merge $result (dict "original" $result.src) -}}
+{{- if not (findRE `^(https?:)?//` $src) -}}
+  {{- $keys := slice -}}
+  {{- with .page.File }}{{ $keys = $keys | append (path.Join "content" .Dir $path) }}{{ end -}}
+  {{- if strings.HasPrefix $src "/" }}{{ $keys = slice (path.Join "static" $path) (path.Join "content" $path) }}{{ else }}{{ $keys = $keys | append (path.Join "static" $path) (path.Join "content" $path) }}{{ end -}}
+  {{- $metadata := dict -}}
+  {{- range $keys -}}
+    {{- if not $metadata }}{{ with index hugo.Data.xeu.images . }}{{ $metadata = . }}{{ end }}{{ end -}}
+  {{- end -}}
+  {{- with $metadata -}}
+    {{- $sizes := "auto, (min-width: 824px) 760px, (max-width: 600px) calc(100vw - 40px), calc(100vw - 64px)" -}}
+    {{- $thumbnail := index (where .variants "role" "thumbnail") 0 -}}
+    {{- $medium := index (where .variants "role" "medium") 0 -}}
+    {{- $variants := slice $thumbnail -}}
+    {{- $fallback := $medium.src -}}
+    {{- if eq $.kind "card" -}}
+      {{- /* 列表永远使用 640px 小图，不允许高密度屏提前下载正文中图。 */ -}}
+      {{- $fallback = $thumbnail.src -}}
+    {{- else if ne $thumbnail.src $medium.src -}}
+      {{- $variants = $variants | append $medium -}}
+    {{- end -}}
+    {{- $srcset := slice -}}
+    {{- range $variants -}}
+      {{- $srcset = $srcset | append (printf "%s %dw" (.src | relURL) (int .width)) -}}
+    {{- end -}}
+    {{- $result = merge $result (dict "src" ($fallback | relURL) "width" .width "height" .height "blurhash" .blurhash) -}}
+    {{- if gt (len $srcset) 1 -}}
+      {{- $result = merge $result (dict "srcset" (delimit $srcset ", ") "sizes" $sizes) -}}
+    {{- end -}}
+  {{- else -}}
+    {{- if in (slice ".jpg" ".jpeg" ".png" ".webp" ".avif" ".gif" "") (lower (path.Ext $path)) -}}
+      {{- errorf "图片 %s 缺少缩略图数据，请先运行 npm run images。" $src -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- return $result -}}

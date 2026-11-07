@@ -1,0 +1,14 @@
+{{ define "main" }}
+  {{ $posts := partial "posts.html" . }}
+  {{ $cards := (.Paginate $posts).Pages }}
+  <h1 class="page-heading">文章</h1>
+  <div class="article-list" data-masonry aria-label="文章列表">
+    {{ $eagerAssigned := false }}
+    {{ range $page := $cards }}
+      {{ $eager := and (not $eagerAssigned) (ne $page.Params.image nil) }}
+      {{ partial "card.html" (dict "page" $page "eager" $eager) }}
+      {{ if $eager }}{{ $eagerAssigned = true }}{{ end }}
+    {{ end }}
+  </div>
+  {{ partial "pagination.html" .Paginator }}
+{{ end }}

@@ -1,0 +1,50 @@
+{
+  "name": "xeu-blog",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.12.0 || >=24.0.0"
+  },
+  "scripts": {
+    "images": "node scripts/assets/images.mjs",
+    "d2": "node scripts/assets/d2.mjs",
+    "shiki": "node scripts/assets/shiki.mjs",
+    "math": "node scripts/assets/math.mjs",
+    "identity": "node scripts/assets/identity.mjs",
+    "images:watch": "node scripts/assets/images.mjs --watch",
+    "d2:watch": "node scripts/assets/d2.mjs --watch",
+    "shiki:watch": "node scripts/assets/shiki.mjs --watch",
+    "math:watch": "node scripts/assets/math.mjs --watch",
+    "test:shiki": "node --test scripts/assets/shiki.test.mjs",
+    "test:math": "node --test scripts/assets/math.test.mjs",
+    "test:styles": "node --test scripts/assets/styles.test.mjs",
+    "build": "node scripts/deploy.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "dev": "bash scripts/hugo.sh server --disableFastRender",
+    "dev:cloudflare": "npx wrangler dev --var COMMENTS_ENV:development",
+    "deploy:cloudflare": "npx wrangler deploy",
+    "post:new": "node scripts/posts/new.mjs",
+    "friend:add": "node scripts/friends/add.mjs"
+  },
+  "dependencies": {
+    "@d2lang/d2": "0.1.34",
+    "@reogrid/font-sc": "2.0.0",
+    "blurhash": "2.0.5",
+    "cheerio": "1.2.0",
+    "lightningcss": "1.33.0",
+    "markdown-it": "15.0.2",
+    "purgecss": "7.0.2",
+    "sharp": "0.35.4",
+    "shiki": "4.5.0",
+    "svgo": "4.1.0",
+    "texsvg": "4.0.3"
+  },
+  "overrides": {
+    "cheerio": {
+      "encoding-sniffer": "1.0.2"
+    },
+    "purgecss": {
+      "postcss-selector-parser": "7.1.6"
+    }
+  }
+}

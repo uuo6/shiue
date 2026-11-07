@@ -1,0 +1,21 @@
+name = "欧小新の站"
+description = "圈一块地，画一间牢。"
+mainSections = ["post"]
+rssFullContent = true
+
+[author]
+name = "欧小新"
+homepage = "https://github.com/uuo6"
+
+[footer]
+since = 2026
+
+[article]
+license = "CC BY-NC-SA 4.0"
+licenseURL = "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+
+[comments]
+enabled = false
+
+[friends]
+applications = false
